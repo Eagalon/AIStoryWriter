@@ -31,9 +31,21 @@ class StoryWorkflow {
     const startWorkflowBtn = document.getElementById('startWorkflowBtn')
     if (startWorkflowBtn) {
       console.log('✅ Found startWorkflowBtn, binding click event')
+
+      // Wrap with button locking
+      const wrappedStartWorkflow = window.buttonLock.wrapAsync(
+        startWorkflowBtn,
+        this.startWorkflow.bind(this),
+        {
+          lockText: 'Creating workflow...',
+          lockIcon: 'loader-2',
+          minDuration: 2000,
+        }
+      )
+
       startWorkflowBtn.addEventListener('click', () => {
         console.log('🖱️ Start workflow button clicked!')
-        this.startWorkflow()
+        wrappedStartWorkflow()
       })
     } else {
       console.log('❌ startWorkflowBtn not found!')
@@ -493,17 +505,31 @@ class StoryWorkflow {
     // Save and proceed button
     const saveAndProceedBtn = content.querySelector('#saveAndProceedBtn')
     if (saveAndProceedBtn) {
-      saveAndProceedBtn.addEventListener('click', () =>
-        this.saveCharactersSettingsAndProceed()
+      const wrappedSaveAndProceed = window.buttonLock.wrapAsync(
+        saveAndProceedBtn,
+        this.saveCharactersSettingsAndProceed.bind(this),
+        {
+          lockText: 'Saving...',
+          lockIcon: 'save',
+          minDuration: 1500,
+        }
       )
+      saveAndProceedBtn.addEventListener('click', wrappedSaveAndProceed)
     }
 
     // Regenerate button
     const regenerateBtn = content.querySelector('#regenerateCharactersBtn')
     if (regenerateBtn) {
-      regenerateBtn.addEventListener('click', () =>
-        this.regenerateCharactersSettings()
+      const wrappedRegenerate = window.buttonLock.wrapAsync(
+        regenerateBtn,
+        this.regenerateCharactersSettings.bind(this),
+        {
+          lockText: 'Regenerating...',
+          lockIcon: 'refresh-cw',
+          minDuration: 2000,
+        }
       )
+      regenerateBtn.addEventListener('click', wrappedRegenerate)
     }
 
     // Add character button
@@ -737,17 +763,33 @@ class StoryWorkflow {
       </div>
     `
 
-    // Bind events
+    // Bind events with button locking
     const startBtn = content.querySelector('#startChapterGenerationBtn')
     if (startBtn) {
-      startBtn.addEventListener('click', () => this.startChapterGeneration())
+      const wrappedStartChapterGeneration = window.buttonLock.wrapAsync(
+        startBtn,
+        this.startChapterGeneration.bind(this),
+        {
+          lockText: 'Starting...',
+          lockIcon: 'book-open',
+          minDuration: 1500,
+        }
+      )
+      startBtn.addEventListener('click', wrappedStartChapterGeneration)
     }
 
     const generateFullStoryBtn = content.querySelector('#generateFullStoryBtn')
     if (generateFullStoryBtn) {
-      generateFullStoryBtn.addEventListener('click', () =>
-        this.generateFullStory()
+      const wrappedGenerateFullStory = window.buttonLock.wrapAsync(
+        generateFullStoryBtn,
+        this.generateFullStory.bind(this),
+        {
+          lockText: 'Generating story...',
+          lockIcon: 'zap',
+          minDuration: 3000,
+        }
       )
+      generateFullStoryBtn.addEventListener('click', wrappedGenerateFullStory)
     }
 
     // Re-initialize Lucide icons
@@ -877,10 +919,9 @@ class StoryWorkflow {
                   generated
                     ? `
                   <div class="chapter-preview">
-                    <p class="chapter-excerpt">${generated.content.substring(
-                      0,
-                      200
-                    )}...</p>
+                    <p class="chapter-excerpt">${this.stripThinkingTags(
+                      generated.content
+                    ).substring(0, 200)}...</p>
                     <button class="btn btn-sm btn-outline view-chapter-btn" data-chapter="${
                       chapter.chapter_number
                     }">
@@ -973,6 +1014,181 @@ class StoryWorkflow {
     }
   }
 
+  addCompletedChapterToWorkflow(chapterData) {
+    if (!this.currentWorkflow) return
+
+    // Find and update or add the chapter
+    const existingIndex = this.currentWorkflow.chapters.findIndex(
+      (ch) => ch.chapter_number === chapterData.chapter_number
+    )
+
+    if (existingIndex !== -1) {
+      this.currentWorkflow.chapters[existingIndex] = chapterData
+    } else {
+      this.currentWorkflow.chapters.push(chapterData)
+      this.currentWorkflow.chapters_completed =
+        this.currentWorkflow.chapters.length
+    }
+
+    // Sort chapters by chapter number
+    this.currentWorkflow.chapters.sort(
+      (a, b) => a.chapter_number - b.chapter_number
+    )
+
+    // Update the chapters display to show the new chapter immediately
+    this.refreshChapterDisplay()
+  }
+
+  refreshChapterDisplay() {
+    // Only refresh if we're not in the middle of bulk generation UI
+    const chaptersContent = document.getElementById('chaptersContent')
+    if (!chaptersContent) return
+
+    // Check if we're in bulk generation mode
+    const bulkGenSection = chaptersContent.querySelector(
+      '.chapters-generation-section'
+    )
+    if (bulkGenSection) {
+      // We're in bulk generation mode, just update the sidebar or add a quick preview
+      this.updateChaptersSidebar()
+    } else {
+      // We're in normal mode, fully refresh the chapters block
+      this.renderChaptersBlock()
+    }
+  }
+
+  updateChaptersSidebar() {
+    // Find or create a sidebar for completed chapters during bulk generation
+    const chaptersContent = document.getElementById('chaptersContent')
+    if (!chaptersContent) return
+
+    let sidebar = chaptersContent.querySelector('.completed-chapters-sidebar')
+    if (!sidebar) {
+      sidebar = document.createElement('div')
+      sidebar.className = 'completed-chapters-sidebar'
+      sidebar.innerHTML = `
+        <h5>Completed Chapters</h5>
+        <div class="completed-chapters-list"></div>
+      `
+      chaptersContent.appendChild(sidebar)
+    }
+
+    const chaptersList = sidebar.querySelector('.completed-chapters-list')
+    chaptersList.innerHTML = ''
+
+    // Add each completed chapter as a collapsible preview
+    this.currentWorkflow.chapters.forEach((chapter) => {
+      const chapterItem = document.createElement('div')
+      chapterItem.className = 'sidebar-chapter-item'
+
+      const preview =
+        this.stripThinkingTags(chapter.content).substring(0, 200) +
+        (chapter.content.length > 200 ? '...' : '')
+
+      chapterItem.innerHTML = `
+        <div class="sidebar-chapter-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+          <strong>Chapter ${chapter.chapter_number}: ${chapter.title}</strong>
+          <span class="word-count">${chapter.word_count} words</span>
+        </div>
+        <div class="sidebar-chapter-preview" style="display: none;">
+          <p>${preview}</p>
+          <button onclick="window.storyWorkflow.viewFullChapter(${chapter.chapter_number})" class="btn btn-secondary btn-sm">View Full Chapter</button>
+        </div>
+      `
+      chaptersList.appendChild(chapterItem)
+    })
+  }
+
+  stripThinkingTags(text) {
+    // Remove thinking tags for previews and word counts (both <thinking> and <think>)
+    return text
+      .replace(/<(?:thinking|think)>[\s\S]*?<\/(?:thinking|think)>/gi, '')
+      .trim()
+  }
+
+  parseContentWithThinking(text) {
+    // Parse content and handle thinking tags specially (same as storyDisplay)
+    if (!text) return ''
+
+    // Split content by thinking tags (both <thinking> and <think>)
+    const parts = text.split(
+      /(<(?:thinking|think)>[\s\S]*?<\/(?:thinking|think)>)/gi
+    )
+    let result = ''
+    let thinkingCounter = 0
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
+
+      if (part.match(/^<(?:thinking|think)>[\s\S]*?<\/(?:thinking|think)>$/i)) {
+        // This is a thinking block
+        thinkingCounter++
+        const thinkingContent = part
+          .replace(
+            /^<(?:thinking|think)>([\s\S]*?)<\/(?:thinking|think)>$/i,
+            '$1'
+          )
+          .trim()
+
+        result += `
+          <div class="thinking-block">
+            <div class="thinking-header" onclick="this.parentElement.classList.toggle('expanded')">
+              <i data-lucide="brain"></i>
+              <span>Internal Reasoning</span>
+              <i data-lucide="chevron-down" class="thinking-chevron"></i>
+            </div>
+            <div class="thinking-content">
+              <div class="thinking-text">${this.escapeHtml(
+                thinkingContent
+              )}</div>
+            </div>
+          </div>
+        `
+      } else if (part.trim()) {
+        // This is regular content
+        result += `<div class="story-paragraph">${this.escapeHtml(part)}</div>`
+      }
+    }
+
+    return result
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div')
+    div.textContent = text
+    return div.innerHTML
+  }
+
+  viewFullChapter(chapterNumber) {
+    const chapter = this.currentWorkflow.chapters.find(
+      (ch) => ch.chapter_number === chapterNumber
+    )
+    if (!chapter) return
+
+    // Create a modal or new window to show the full chapter
+    const modal = document.createElement('div')
+    modal.className = 'chapter-modal'
+    modal.innerHTML = `
+      <div class="chapter-modal-content">
+        <div class="chapter-modal-header">
+          <h3>Chapter ${chapter.chapter_number}: ${chapter.title}</h3>
+          <button onclick="this.closest('.chapter-modal').remove()" class="btn btn-sm">×</button>
+        </div>
+        <div class="chapter-modal-body">
+          <div class="chapter-content">${this.parseContentWithThinking(
+            chapter.content
+          )}</div>
+        </div>
+      </div>
+    `
+    document.body.appendChild(modal)
+
+    // Re-initialize Lucide icons for thinking blocks
+    if (window.lucide) {
+      window.lucide.createIcons()
+    }
+  }
+
   handleBulkGenerationUpdate(update) {
     console.log('Bulk generation update:', update)
 
@@ -1006,13 +1222,47 @@ class StoryWorkflow {
             : ''
           const attemptInfo =
             update.attempts > 1 ? ` after ${update.attempts} attempts` : ''
-          currentChapterInfo.textContent = `Completed ${update.chapter_title}${scoreInfo}${attemptInfo} - ${update.current}/${update.total}`
+          const timeInfo = update.chapter_time
+            ? ` in ${update.chapter_time.toFixed(1)}s`
+            : ''
+
+          let statusText = `Completed ${update.chapter_title}${scoreInfo}${attemptInfo}${timeInfo} - ${update.current}/${update.total}`
+
+          // Add timing estimates if available
+          if (
+            update.estimated_time_remaining &&
+            update.estimated_time_remaining > 0
+          ) {
+            const estimateMinutes = Math.ceil(
+              update.estimated_time_remaining / 60
+            )
+            statusText += ` - Est. ${estimateMinutes}m remaining`
+          }
+
+          currentChapterInfo.textContent = statusText
         } else if (update.status === 'completed_with_warning') {
-          currentChapterInfo.textContent = `Completed ${
+          const timeInfo = update.chapter_time
+            ? ` in ${update.chapter_time.toFixed(1)}s`
+            : ''
+
+          let statusText = `Completed ${
             update.chapter_title
-          } with warnings (Score: ${update.validation_score?.toFixed(2)}) - ${
-            update.current
-          }/${update.total}`
+          } with warnings (Score: ${update.validation_score?.toFixed(
+            2
+          )})${timeInfo} - ${update.current}/${update.total}`
+
+          // Add timing estimates if available
+          if (
+            update.estimated_time_remaining &&
+            update.estimated_time_remaining > 0
+          ) {
+            const estimateMinutes = Math.ceil(
+              update.estimated_time_remaining / 60
+            )
+            statusText += ` - Est. ${estimateMinutes}m remaining`
+          }
+
+          currentChapterInfo.textContent = statusText
         }
       }
 
@@ -1051,23 +1301,50 @@ class StoryWorkflow {
             : ''
           const attemptInfo =
             update.attempts > 1 ? ` (${update.attempts} attempts)` : ''
+          const timeInfo = update.chapter_time
+            ? ` in ${update.chapter_time.toFixed(1)}s`
+            : ''
           statusElement.innerHTML = `
             <i data-lucide="check"></i>
-            Complete (${update.word_count} words)${scoreInfo}${attemptInfo}
+            Complete (${update.word_count} words)${scoreInfo}${attemptInfo}${timeInfo}
           `
+
+          // If chapter data is included, immediately add it to the workflow and display it
+          if (update.chapter) {
+            this.addCompletedChapterToWorkflow(update.chapter)
+          }
         } else if (update.status === 'completed_with_warning') {
           chapterCard.className = 'chapter-status-card completed-warning'
+          const timeInfo = update.chapter_time
+            ? ` in ${update.chapter_time.toFixed(1)}s`
+            : ''
           statusElement.innerHTML = `
             <i data-lucide="alert-triangle"></i>
             Complete with warnings (${
               update.word_count
-            } words, Score: ${update.validation_score?.toFixed(2)})
+            } words, Score: ${update.validation_score?.toFixed(2)})${timeInfo}
           `
+
+          // If chapter data is included, immediately add it to the workflow and display it
+          if (update.chapter) {
+            this.addCompletedChapterToWorkflow(update.chapter)
+          }
         }
       }
     } else if (update.type === 'complete') {
       if (currentChapterInfo) {
-        currentChapterInfo.textContent = 'All chapters completed successfully!'
+        let completionText = 'All chapters completed successfully!'
+        if (update.total_time) {
+          const minutes = Math.floor(update.total_time / 60)
+          const seconds = Math.round(update.total_time % 60)
+          completionText += ` in ${minutes}m ${seconds}s`
+        }
+        if (update.avg_time_per_chapter) {
+          completionText += ` (avg ${update.avg_time_per_chapter.toFixed(
+            1
+          )}s per chapter)`
+        }
+        currentChapterInfo.textContent = completionText
       }
       if (overallProgressFill) {
         overallProgressFill.style.width = '100%'
@@ -1134,25 +1411,39 @@ class StoryWorkflow {
 
     // Chapter generation buttons
     content.querySelectorAll('.generate-chapter-btn').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const chapterNumber = parseInt(
-          e.target.closest('.generate-chapter-btn').dataset.chapter
-        )
-        this.generateChapter(chapterNumber)
-      })
+      const chapterNumber = parseInt(btn.dataset.chapter)
+
+      const wrappedGenerateChapter = window.buttonLock.wrapAsync(
+        btn,
+        () => this.generateChapter(chapterNumber),
+        {
+          lockText: 'Generating...',
+          lockIcon: 'loader-2',
+          minDuration: 2000,
+        }
+      )
+
+      btn.addEventListener('click', wrappedGenerateChapter)
     })
 
     // Chapter validation buttons
     content.querySelectorAll('.validate-chapter-btn').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const chapterNumber = parseInt(
-          e.target.closest('.validate-chapter-btn').dataset.chapter
-        )
-        this.validateChapter(chapterNumber)
-      })
+      const chapterNumber = parseInt(btn.dataset.chapter)
+
+      const wrappedValidateChapter = window.buttonLock.wrapAsync(
+        btn,
+        () => this.validateChapter(chapterNumber),
+        {
+          lockText: 'Validating...',
+          lockIcon: 'check-circle',
+          minDuration: 1500,
+        }
+      )
+
+      btn.addEventListener('click', wrappedValidateChapter)
     })
 
-    // View chapter buttons
+    // View chapter buttons - no locking needed for these
     content.querySelectorAll('.view-chapter-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const chapterNumber = parseInt(
@@ -1231,17 +1522,19 @@ class StoryWorkflow {
           <button class="close-modal-btn">×</button>
         </div>
         <div class="chapter-modal-body">
-          <div class="chapter-content">
-            ${chapter.content
-              .split('\n')
-              .map((p) => `<p>${p}</p>`)
-              .join('')}
-          </div>
+          <div class="chapter-content">${this.parseContentWithThinking(
+            chapter.content
+          )}</div>
         </div>
       </div>
     `
 
     document.body.appendChild(modal)
+
+    // Re-initialize Lucide icons for thinking blocks
+    if (window.lucide) {
+      window.lucide.createIcons()
+    }
 
     modal.querySelector('.close-modal-btn').addEventListener('click', () => {
       document.body.removeChild(modal)
@@ -1303,7 +1596,7 @@ class StoryWorkflow {
       </div>
     `
 
-    // Bind events
+    // Bind events with button locking
     const viewBtn = content.querySelector('#viewFullStoryBtn')
     if (viewBtn) {
       viewBtn.addEventListener('click', () => this.viewCompleteStory())
@@ -1311,7 +1604,17 @@ class StoryWorkflow {
 
     const downloadBtn = content.querySelector('#downloadStoryBtn')
     if (downloadBtn) {
-      downloadBtn.addEventListener('click', () => this.downloadStory())
+      const wrappedDownload = window.buttonLock.wrapAsync(
+        downloadBtn,
+        this.downloadStory.bind(this),
+        {
+          lockText: 'Downloaded!',
+          lockIcon: 'check',
+          minDuration: 1500,
+          showSpinner: false,
+        }
+      )
+      downloadBtn.addEventListener('click', wrappedDownload)
     }
 
     // Re-initialize Lucide icons
@@ -1327,9 +1630,12 @@ class StoryWorkflow {
       .sort((a, b) => a.chapter_number - b.chapter_number)
       .map(
         (chapter) =>
-          `# Chapter ${chapter.chapter_number}: ${chapter.title}\n\n${chapter.content}`
+          `<div class="chapter-section">
+            <h2>Chapter ${chapter.chapter_number}: ${chapter.title}</h2>
+            ${this.parseContentWithThinking(chapter.content)}
+          </div>`
       )
-      .join('\n\n---\n\n')
+      .join('<div class="chapter-divider">---</div>')
 
     const modal = document.createElement('div')
     modal.className = 'chapter-modal'
@@ -1340,17 +1646,17 @@ class StoryWorkflow {
           <button class="close-modal-btn">×</button>
         </div>
         <div class="chapter-modal-body">
-          <div class="chapter-content">
-            ${completeStory
-              .split('\n')
-              .map((p) => `<p>${p}</p>`)
-              .join('')}
-          </div>
+          <div class="chapter-content">${completeStory}</div>
         </div>
       </div>
     `
 
     document.body.appendChild(modal)
+
+    // Re-initialize Lucide icons for thinking blocks
+    if (window.lucide) {
+      window.lucide.createIcons()
+    }
 
     modal.querySelector('.close-modal-btn').addEventListener('click', () => {
       document.body.removeChild(modal)

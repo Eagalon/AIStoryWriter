@@ -162,6 +162,56 @@ class APIClient {
     })
   }
 
+  async *generateChapterStream(workflowId, chapterNumber, requestData = {}) {
+    try {
+      const response = await fetch(
+        `${this.baseURL}/workflow/${workflowId}/chapter/${chapterNumber}/stream`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            additional_instructions: '',
+            ...requestData,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line.length > 6) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              yield data
+              if (data.type === 'chapter_complete' || data.type === 'error') {
+                return
+              }
+            } catch (e) {
+              console.warn('Failed to parse chunk:', line)
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Chapter streaming error:', error)
+      throw error
+    }
+  }
+
   async *generateAllChaptersStream(workflowId, requestData = {}) {
     try {
       const response = await fetch(

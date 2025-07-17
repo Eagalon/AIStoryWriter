@@ -52,87 +52,249 @@ class App {
   }
 
   async initializeModules() {
-    // Initialize all modules in the correct order
-    // StatusBar is already initialized globally
-    await window.settingsPanel.init()
-    await window.storyWorkflow.init()
+    // Initialize API client
+    window.api = new APIClient()
 
-    console.log('📦 All modules initialized')
+    // Initialize settings panel
+    window.settingsPanel = new SettingsPanel()
+
+    // Initialize story display
+    window.storyDisplay = new StoryDisplay()
+
+    // Initialize story generator
+    window.storyGenerator = new StoryGenerator()
+
+    // Initialize story workflow
+    window.storyWorkflow = new StoryWorkflow()
+
+    // Initialize status bar
+    window.statusBar = new StatusBar()
+
+    // Bind all events
+    window.storyGenerator.bindEvents()
+    window.storyWorkflow.bindEvents()
+    window.settingsPanel.bindEvents()
+
+    // Initial render
+    window.storyDisplay.render()
+    window.settingsPanel.render()
+    window.storyWorkflow.init()
   }
 
   initializeIcons() {
-    // Initialize Lucide icons
     if (window.lucide) {
       window.lucide.createIcons()
-      console.log('🎨 Icons initialized')
     }
   }
 
   showLoading(message = 'Loading...') {
-    if (window.statusBar) {
-      window.statusBar.show(message)
+    const overlay = document.getElementById('loadingOverlay')
+    const text = document.getElementById('loadingText')
+    if (overlay && text) {
+      text.textContent = message
+      overlay.style.display = 'flex'
     }
   }
 
   hideLoading() {
-    if (window.statusBar) {
-      window.statusBar.hide()
+    const overlay = document.getElementById('loadingOverlay')
+    if (overlay) {
+      overlay.style.display = 'none'
     }
   }
 
   showError(message) {
     this.hideLoading()
-    // Create error message display
-    const errorDiv = document.createElement('div')
-    errorDiv.className = 'error-message'
-    errorDiv.innerHTML = `
-      <div class="error-content">
-        <i data-lucide="alert-circle"></i>
-        <h3>Connection Error</h3>
-        <p>${message}</p>
-        <button onclick="location.reload()" class="btn btn-primary">
-          <i data-lucide="refresh-cw"></i>
-          Retry
-        </button>
-      </div>
-    `
+    console.error('Application Error:', message)
 
-    // Add to body
-    document.body.appendChild(errorDiv)
-
-    // Initialize icons for the error message
-    if (window.lucide) {
-      window.lucide.createIcons()
+    // Show error in UI
+    const container = document.querySelector('.container')
+    if (container) {
+      container.innerHTML = `
+        <div class="error-container">
+          <div class="error-content">
+            <i data-lucide="alert-circle"></i>
+            <h2>Connection Error</h2>
+            <p>${message}</p>
+            <button onclick="location.reload()" class="btn btn-primary">
+              <i data-lucide="refresh-cw"></i>
+              Try Again
+            </button>
+          </div>
+        </div>
+      `
+      this.initializeIcons()
     }
   }
 
   showWarning(message) {
-    // Create warning notification
-    const warningDiv = document.createElement('div')
-    warningDiv.className = 'warning-notification'
-    warningDiv.innerHTML = `
-      <div class="warning-content">
-        <i data-lucide="alert-triangle"></i>
-        <span>${message}</span>
-        <button onclick="this.parentElement.parentElement.remove()" class="close-warning">
-          <i data-lucide="x"></i>
-        </button>
-      </div>
-    `
+    console.warn('Application Warning:', message)
+    // Could add a toast notification here
+  }
+}
 
-    // Add to body
-    document.body.appendChild(warningDiv)
+// Button locking utility to prevent double-execution
+class ButtonLock {
+  constructor() {
+    this.lockedButtons = new Map() // button -> lock info
+    this.minLockDuration = 1000 // Minimum lock duration (1 second)
+  }
 
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-      if (warningDiv.parentElement) {
-        warningDiv.remove()
+  /**
+   * Lock a button for a specified duration or until manually unlocked
+   * @param {HTMLElement|string} buttonOrId - Button element or ID
+   * @param {Object} options - Lock options
+   * @param {number} options.minDuration - Minimum lock duration in ms (default: 1000)
+   * @param {string} options.lockText - Text to show while locked
+   * @param {string} options.lockIcon - Lucide icon to show while locked
+   * @param {boolean} options.showSpinner - Whether to show spinning animation
+   */
+  lock(buttonOrId, options = {}) {
+    const button =
+      typeof buttonOrId === 'string'
+        ? document.getElementById(buttonOrId)
+        : buttonOrId
+
+    if (!button || button.disabled) return
+
+    const {
+      minDuration = this.minLockDuration,
+      lockText = 'Processing...',
+      lockIcon = 'loader-2',
+      showSpinner = true,
+    } = options
+
+    // Store original state
+    const originalState = {
+      disabled: button.disabled,
+      innerHTML: button.innerHTML,
+      textContent: button.textContent,
+      className: button.className,
+      startTime: Date.now(),
+      minDuration,
+    }
+
+    this.lockedButtons.set(button, originalState)
+
+    // Apply locked state
+    button.disabled = true
+    button.classList.add('locked', 'generating')
+
+    // Update button content
+    const icon = button.querySelector('i')
+    const textSpan = button.querySelector('span')
+
+    if (icon && lockIcon) {
+      icon.setAttribute('data-lucide', lockIcon)
+      if (showSpinner) {
+        icon.classList.add('animate-spin')
       }
-    }, 5000)
+    }
 
-    // Initialize icons for the warning
+    if (textSpan) {
+      textSpan.textContent = lockText
+    } else if (!icon) {
+      // If no icon or span, replace entire content
+      button.innerHTML = `<i data-lucide="${lockIcon}" class="${
+        showSpinner ? 'animate-spin' : ''
+      }"></i> ${lockText}`
+    }
+
+    // Re-render lucide icons
     if (window.lucide) {
       window.lucide.createIcons()
+    }
+
+    console.log(`🔒 Locked button: ${button.id || button.textContent}`)
+  }
+
+  /**
+   * Unlock a button, respecting minimum lock duration
+   * @param {HTMLElement|string} buttonOrId - Button element or ID
+   * @param {boolean} force - Force unlock ignoring minimum duration
+   */
+  unlock(buttonOrId, force = false) {
+    const button =
+      typeof buttonOrId === 'string'
+        ? document.getElementById(buttonOrId)
+        : buttonOrId
+
+    if (!button || !this.lockedButtons.has(button)) return
+
+    const lockInfo = this.lockedButtons.get(button)
+    const elapsedTime = Date.now() - lockInfo.startTime
+    const remainingTime = Math.max(0, lockInfo.minDuration - elapsedTime)
+
+    if (!force && remainingTime > 0) {
+      // Wait for minimum duration before unlocking
+      setTimeout(() => this.unlock(button, true), remainingTime)
+      return
+    }
+
+    // Restore original state
+    button.disabled = lockInfo.disabled
+    button.innerHTML = lockInfo.innerHTML
+    button.className = lockInfo.className
+
+    // Remove from locked buttons
+    this.lockedButtons.delete(button)
+
+    // Re-render lucide icons
+    if (window.lucide) {
+      window.lucide.createIcons()
+    }
+
+    console.log(`🔓 Unlocked button: ${button.id || button.textContent}`)
+  }
+
+  /**
+   * Check if a button is currently locked
+   * @param {HTMLElement|string} buttonOrId
+   * @returns {boolean}
+   */
+  isLocked(buttonOrId) {
+    const button =
+      typeof buttonOrId === 'string'
+        ? document.getElementById(buttonOrId)
+        : buttonOrId
+    return button ? this.lockedButtons.has(button) : false
+  }
+
+  /**
+   * Unlock all locked buttons
+   * @param {boolean} force - Force unlock ignoring minimum duration
+   */
+  unlockAll(force = false) {
+    const buttonsToUnlock = Array.from(this.lockedButtons.keys())
+    buttonsToUnlock.forEach((button) => this.unlock(button, force))
+  }
+
+  /**
+   * Wrap an async function with automatic button locking
+   * @param {HTMLElement|string} buttonOrId - Button to lock
+   * @param {Function} asyncFn - Async function to execute
+   * @param {Object} lockOptions - Lock options
+   * @returns {Function} Wrapped function
+   */
+  wrapAsync(buttonOrId, asyncFn, lockOptions = {}) {
+    return async (...args) => {
+      const button =
+        typeof buttonOrId === 'string'
+          ? document.getElementById(buttonOrId)
+          : buttonOrId
+
+      if (!button || this.isLocked(button)) {
+        console.warn('⚠️ Button is locked or not found, ignoring click')
+        return
+      }
+
+      this.lock(button, lockOptions)
+
+      try {
+        return await asyncFn.apply(this, args)
+      } finally {
+        this.unlock(button)
+      }
     }
   }
 }
@@ -188,6 +350,9 @@ class Utils {
     }
   }
 }
+
+// Global button lock instance
+window.buttonLock = new ButtonLock()
 
 // Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
@@ -246,5 +411,5 @@ document.addEventListener('keydown', (event) => {
 
 // Export for debugging
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { App, Utils }
+  module.exports = { App, Utils, ButtonLock }
 }

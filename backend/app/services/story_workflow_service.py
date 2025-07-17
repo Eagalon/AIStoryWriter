@@ -1,49 +1,63 @@
+import asyncio
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
+import time
 from datetime import datetime
+from typing import List, Optional, Dict, AsyncGenerator, Tuple
 
+from app.core.config import settings
 from app.models.story_models import (
     StoryWorkflow,
+    WorkflowStep,
     Character,
     StorySettings,
     StoryOutline,
     ChapterOutline,
     GeneratedChapter,
-    WorkflowStep,
-    CreateWorkflowRequest,
 )
 from app.services.ollama_service import ollama_service
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class StoryWorkflowService:
     def __init__(self):
-        # In-memory storage for workflows (in production, use a database)
-        self.workflows: Dict[str, StoryWorkflow] = {}
-
-    def create_workflow(self, request: CreateWorkflowRequest) -> StoryWorkflow:
-        """Create a new story generation workflow"""
-        workflow = StoryWorkflow(
-            original_prompt=request.prompt,
-            model=request.model or settings.OLLAMA_DEFAULT_MODEL,
-            temperature=request.temperature,
-            top_p=request.top_p,
-        )
-
-        self.workflows[workflow.id] = workflow
-        logger.info(f"Created workflow {workflow.id}")
-        return workflow
+        self._workflows: Dict[str, StoryWorkflow] = {}
 
     def get_workflow(self, workflow_id: str) -> Optional[StoryWorkflow]:
         """Get workflow by ID"""
-        return self.workflows.get(workflow_id)
+        return self._workflows.get(workflow_id)
+
+    def create_workflow(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        temperature: float = settings.DEFAULT_TEMPERATURE,
+        top_p: float = settings.DEFAULT_TOP_P,
+    ) -> StoryWorkflow:
+        """Create a new story workflow"""
+        workflow = StoryWorkflow(
+            original_prompt=prompt,
+            model=model or settings.OLLAMA_DEFAULT_MODEL,
+            temperature=temperature,
+            top_p=top_p,
+        )
+
+        self._workflows[workflow.id] = workflow
+        logger.info(f"Created new workflow {workflow.id}")
+        return workflow
 
     def list_workflows(self) -> List[StoryWorkflow]:
         """List all workflows"""
-        return list(self.workflows.values())
+        return list(self._workflows.values())
+
+    def delete_workflow(self, workflow_id: str) -> bool:
+        """Delete a workflow by ID"""
+        if workflow_id in self._workflows:
+            del self._workflows[workflow_id]
+            logger.info(f"Deleted workflow {workflow_id}")
+            return True
+        return False
 
     async def generate_characters_and_settings(
         self, workflow_id: str, additional_instructions: Optional[str] = None
@@ -143,7 +157,7 @@ class StoryWorkflowService:
         chapter_number: int,
         additional_instructions: Optional[str] = None,
     ) -> StoryWorkflow:
-        """Step 3: Generate a specific chapter (outline, dialogue, then content)"""
+        """Step 3: Generate a specific chapter (outline, dialogue, then content) - Non-streaming version"""
         workflow = self.get_workflow(workflow_id)
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
@@ -212,13 +226,169 @@ class StoryWorkflowService:
 
         return workflow
 
+    async def generate_chapter_stream(
+        self,
+        workflow_id: str,
+        chapter_number: int,
+        additional_instructions: Optional[str] = None,
+    ) -> AsyncGenerator[Dict, None]:
+        """Stream chapter generation with real-time content updates"""
+        workflow = self.get_workflow(workflow_id)
+        if not workflow:
+            raise ValueError(f"Workflow {workflow_id} not found")
+
+        if not workflow.outline:
+            raise ValueError("Story outline must be generated first")
+
+        if chapter_number > len(workflow.outline.chapters):
+            raise ValueError(f"Chapter {chapter_number} not found in outline")
+
+        chapter_outline = workflow.outline.chapters[chapter_number - 1]
+        start_time = time.time()
+
+        try:
+            # Step 1: Generate detailed chapter outline
+            yield {
+                "type": "progress",
+                "step": "outline",
+                "chapter_number": chapter_number,
+                "message": f"Creating detailed outline for Chapter {chapter_number}",
+                "content": "",
+                "elapsed_time": 0,
+            }
+
+            outline_start = time.time()
+            outline_response = await self._generate_chapter_outline(
+                workflow, chapter_outline, additional_instructions
+            )
+            outline_time = time.time() - outline_start
+
+            yield {
+                "type": "step_complete",
+                "step": "outline",
+                "chapter_number": chapter_number,
+                "message": f"Outline completed",
+                "content": outline_response,
+                "elapsed_time": outline_time,
+            }
+
+            # Step 2: Generate dialogue
+            yield {
+                "type": "progress",
+                "step": "dialogue",
+                "chapter_number": chapter_number,
+                "message": f"Creating dialogue for Chapter {chapter_number}",
+                "content": "",
+                "elapsed_time": time.time() - start_time,
+            }
+
+            dialogue_start = time.time()
+            dialogue_response = await self._generate_chapter_dialogue(
+                workflow, chapter_outline, outline_response
+            )
+            dialogue_time = time.time() - dialogue_start
+
+            yield {
+                "type": "step_complete",
+                "step": "dialogue",
+                "chapter_number": chapter_number,
+                "message": f"Dialogue completed",
+                "content": dialogue_response,
+                "elapsed_time": dialogue_time,
+            }
+
+            # Step 3: Generate final chapter content with streaming
+            yield {
+                "type": "progress",
+                "step": "content",
+                "chapter_number": chapter_number,
+                "message": f"Writing Chapter {chapter_number}",
+                "content": "",
+                "elapsed_time": time.time() - start_time,
+            }
+
+            content_start = time.time()
+            full_content = ""
+
+            async for content_chunk in self._generate_chapter_content_stream(
+                workflow, chapter_outline, outline_response, dialogue_response
+            ):
+                full_content += content_chunk
+                yield {
+                    "type": "content_chunk",
+                    "step": "content",
+                    "chapter_number": chapter_number,
+                    "content": content_chunk,
+                    "full_content": full_content,
+                    "elapsed_time": time.time() - start_time,
+                }
+
+            content_time = time.time() - content_start
+            total_time = time.time() - start_time
+
+            # Create the chapter object
+            generated_chapter = GeneratedChapter(
+                chapter_number=chapter_number,
+                title=chapter_outline.title,
+                outline=outline_response,
+                dialogue=dialogue_response,
+                content=full_content,
+                word_count=len(full_content.split()),
+            )
+
+            # Update or add chapter to workflow
+            existing_chapter_index = next(
+                (
+                    i
+                    for i, ch in enumerate(workflow.chapters)
+                    if ch.chapter_number == chapter_number
+                ),
+                None,
+            )
+
+            if existing_chapter_index is not None:
+                workflow.chapters[existing_chapter_index] = generated_chapter
+            else:
+                workflow.chapters.append(generated_chapter)
+                workflow.chapters_completed += 1
+
+            workflow.updated_at = datetime.now()
+
+            yield {
+                "type": "chapter_complete",
+                "chapter_number": chapter_number,
+                "chapter": generated_chapter.model_dump(),
+                "total_time": total_time,
+                "outline_time": outline_time,
+                "dialogue_time": dialogue_time,
+                "content_time": content_time,
+                "word_count": generated_chapter.word_count,
+                "message": f"Chapter {chapter_number} completed in {total_time:.1f}s",
+            }
+
+            logger.info(
+                f"Generated chapter {chapter_number} for workflow {workflow_id} in {total_time:.1f}s"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to generate chapter {chapter_number} for workflow {workflow_id}: {e}"
+            )
+            yield {
+                "type": "error",
+                "chapter_number": chapter_number,
+                "message": f"Error generating chapter: {str(e)}",
+                "elapsed_time": time.time() - start_time,
+            }
+            raise
+
     async def generate_all_chapters_stream(
         self,
         workflow_id: str,
         additional_instructions: Optional[str] = None,
         validation_threshold: Optional[float] = None,
     ):
-        """Generate all remaining chapters in sequence with progress updates"""
+        """Generate all remaining chapters in sequence with progress updates and timing"""
         workflow = self.get_workflow(workflow_id)
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
@@ -249,11 +419,29 @@ class StoryWorkflowService:
             }
             return
 
+        # Timing tracking
+        overall_start_time = time.time()
+        chapter_times = []  # Track completion times for estimating
+        total_chapters_to_generate = len(chapters_to_generate)
+
         # Generate each chapter with validation and regeneration
         for i, chapter_outline in enumerate(chapters_to_generate):
             chapter_number = chapter_outline.chapter_number
             regeneration_attempts = 0
             chapter_completed = False
+            chapter_start_time = time.time()
+
+            # Calculate estimates based on completed chapters
+            elapsed_overall = time.time() - overall_start_time
+            avg_time_per_chapter = (
+                (sum(chapter_times) / len(chapter_times)) if chapter_times else None
+            )
+            remaining_chapters = total_chapters_to_generate - i
+            estimated_time_remaining = (
+                (avg_time_per_chapter * remaining_chapters)
+                if avg_time_per_chapter
+                else None
+            )
 
             while (
                 not chapter_completed
@@ -265,7 +453,8 @@ class StoryWorkflowService:
                     else ""
                 )
 
-                yield {
+                # Build progress message with timing info
+                progress_data = {
                     "type": "progress",
                     "chapter_number": chapter_number,
                     "chapter_title": chapter_outline.title,
@@ -274,7 +463,17 @@ class StoryWorkflowService:
                     "status": "generating",
                     "attempt": regeneration_attempts + 1,
                     "message": f"Generating Chapter {chapter_number}: {chapter_outline.title}{attempt_label}",
+                    "elapsed_overall": elapsed_overall,
                 }
+
+                if avg_time_per_chapter:
+                    progress_data["avg_time_per_chapter"] = avg_time_per_chapter
+                    progress_data["estimated_time_remaining"] = estimated_time_remaining
+                    progress_data["estimated_completion"] = (
+                        time.time() + estimated_time_remaining
+                    )
+
+                yield progress_data
 
                 try:
                     # Generate the chapter using existing method
@@ -309,6 +508,19 @@ class StoryWorkflowService:
 
                     if validation_score >= validation_threshold:
                         # Chapter passed validation
+                        chapter_time = time.time() - chapter_start_time
+                        chapter_times.append(chapter_time)
+                        elapsed_overall = time.time() - overall_start_time
+
+                        # Recalculate estimates with this completed chapter
+                        avg_time_per_chapter = sum(chapter_times) / len(chapter_times)
+                        remaining_chapters = total_chapters_to_generate - (i + 1)
+                        estimated_time_remaining = (
+                            avg_time_per_chapter * remaining_chapters
+                            if remaining_chapters > 0
+                            else 0
+                        )
+
                         yield {
                             "type": "progress",
                             "chapter_number": chapter_number,
@@ -321,6 +533,16 @@ class StoryWorkflowService:
                             "attempts": regeneration_attempts + 1,
                             "message": f"Completed Chapter {chapter_number}: {chapter_outline.title} (Score: {validation_score:.2f})",
                             "word_count": chapter.word_count,
+                            "chapter_time": chapter_time,
+                            "elapsed_overall": elapsed_overall,
+                            "avg_time_per_chapter": avg_time_per_chapter,
+                            "estimated_time_remaining": estimated_time_remaining,
+                            "estimated_completion": (
+                                time.time() + estimated_time_remaining
+                                if remaining_chapters > 0
+                                else time.time()
+                            ),
+                            "chapter": chapter.model_dump(),  # Include chapter data for immediate display
                         }
                         chapter_completed = True
                     else:
@@ -341,6 +563,21 @@ class StoryWorkflowService:
                             }
                         else:
                             # Max attempts reached
+                            chapter_time = time.time() - chapter_start_time
+                            chapter_times.append(chapter_time)
+                            elapsed_overall = time.time() - overall_start_time
+
+                            # Recalculate estimates with this completed chapter
+                            avg_time_per_chapter = sum(chapter_times) / len(
+                                chapter_times
+                            )
+                            remaining_chapters = total_chapters_to_generate - (i + 1)
+                            estimated_time_remaining = (
+                                avg_time_per_chapter * remaining_chapters
+                                if remaining_chapters > 0
+                                else 0
+                            )
+
                             yield {
                                 "type": "warning",
                                 "chapter_number": chapter_number,
@@ -353,6 +590,16 @@ class StoryWorkflowService:
                                 "attempts": regeneration_attempts,
                                 "message": f"Chapter {chapter_number} completed with low score {validation_score:.2f} after {max_regeneration_attempts} attempts",
                                 "word_count": chapter.word_count,
+                                "chapter_time": chapter_time,
+                                "elapsed_overall": elapsed_overall,
+                                "avg_time_per_chapter": avg_time_per_chapter,
+                                "estimated_time_remaining": estimated_time_remaining,
+                                "estimated_completion": (
+                                    time.time() + estimated_time_remaining
+                                    if remaining_chapters > 0
+                                    else time.time()
+                                ),
+                                "chapter": chapter.model_dump(),  # Include chapter data for immediate display
                             }
                             chapter_completed = True
 
@@ -386,10 +633,18 @@ class StoryWorkflowService:
                         return
 
         # All chapters completed
+        total_time = time.time() - overall_start_time
+        avg_time_per_chapter = (
+            sum(chapter_times) / len(chapter_times) if chapter_times else 0
+        )
+
         yield {
             "type": "complete",
-            "message": f"Successfully generated all {len(chapters_to_generate)} remaining chapters",
+            "message": f"Successfully generated all {len(chapters_to_generate)} remaining chapters in {total_time:.1f}s",
             "total_chapters": total_chapters,
+            "total_time": total_time,
+            "avg_time_per_chapter": avg_time_per_chapter,
+            "chapters_generated": len(chapters_to_generate),
             "workflow": workflow.model_dump(),
         }
 
@@ -615,7 +870,7 @@ Present the dialogue in script format with character names and their lines."""
         detailed_outline: str,
         dialogue: str,
     ) -> str:
-        """Generate final chapter content"""
+        """Generate final chapter content - Non-streaming version"""
         prompt = f"""Write the complete chapter based on:
 
 Chapter Outline:
@@ -655,6 +910,55 @@ Start immediately with the story content and end when the chapter naturally conc
             top_p=workflow.top_p,
             system_prompt="You are an expert novelist. Write engaging, well-crafted chapters with rich description and compelling narrative. Output only the story content without any headers, titles, or explanatory text.",
         )
+
+    async def _generate_chapter_content_stream(
+        self,
+        workflow: StoryWorkflow,
+        chapter_outline: ChapterOutline,
+        detailed_outline: str,
+        dialogue: str,
+    ) -> AsyncGenerator[str, None]:
+        """Generate final chapter content with streaming"""
+        prompt = f"""Write the complete chapter based on:
+
+Chapter Outline:
+{detailed_outline}
+
+Key Dialogue:
+{dialogue}
+
+Story Details:
+- Genre: {workflow.settings.genre}
+- Setting: {workflow.settings.setting}
+- Tone: {workflow.settings.tone}
+
+Write a complete, polished chapter that:
+- Incorporates the outlined scenes and events
+- Uses the dialogue naturally within narrative
+- Maintains consistent tone and style
+- Develops characters and advances plot
+- Engages the reader with vivid descriptions
+- Flows smoothly from previous chapters
+
+Aim for approximately 2000-4000 words.
+
+IMPORTANT: Output ONLY the story content. Do not include:
+- Chapter titles or headers
+- Introductory text like "Here is the chapter:" or "Chapter X:"
+- Explanatory notes or comments
+- Outro text or summaries
+- Any text that is not part of the actual story narrative
+
+Start immediately with the story content and end when the chapter naturally concludes."""
+
+        async for chunk in ollama_service.generate_story_stream(
+            prompt=prompt,
+            model=workflow.model,
+            temperature=workflow.temperature,
+            top_p=workflow.top_p,
+            system_prompt="You are an expert novelist. Write engaging, well-crafted chapters with rich description and compelling narrative. Output only the story content without any headers, titles, or explanatory text.",
+        ):
+            yield chunk
 
     def _build_validation_prompt(
         self, outline_chapter: ChapterOutline, generated_chapter: GeneratedChapter

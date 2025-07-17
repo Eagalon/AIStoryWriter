@@ -25,15 +25,31 @@ class StoryGenerator {
     }
 
     if (generateBtn) {
-      generateBtn.addEventListener('click', () => {
-        this.handleGenerate(false)
-      })
+      // Wrap with button locking
+      const wrappedGenerate = window.buttonLock.wrapAsync(
+        generateBtn,
+        () => this.handleGenerate(false),
+        {
+          lockText: 'Generating...',
+          lockIcon: 'loader-2',
+          minDuration: 2000,
+        }
+      )
+      generateBtn.addEventListener('click', wrappedGenerate)
     }
 
     if (continueBtn) {
-      continueBtn.addEventListener('click', () => {
-        this.handleGenerate(true)
-      })
+      // Wrap with button locking
+      const wrappedContinue = window.buttonLock.wrapAsync(
+        continueBtn,
+        () => this.handleGenerate(true),
+        {
+          lockText: 'Continuing...',
+          lockIcon: 'loader-2',
+          minDuration: 2000,
+        }
+      )
+      continueBtn.addEventListener('click', wrappedContinue)
     }
 
     if (suggestionsBtn) {
@@ -129,12 +145,18 @@ class StoryGenerator {
     const hasStory = window.storyDisplay && window.storyDisplay.hasContent()
 
     if (generateBtn) {
-      generateBtn.disabled = !hasPrompt || this.isGenerating
+      // Don't disable if button is locked - let ButtonLock handle it
+      if (!window.buttonLock.isLocked(generateBtn)) {
+        generateBtn.disabled = !hasPrompt || this.isGenerating
+      }
     }
 
     if (continueBtn) {
       continueBtn.style.display = hasStory ? 'inline-flex' : 'none'
-      continueBtn.disabled = !hasPrompt || this.isGenerating
+      // Don't disable if button is locked - let ButtonLock handle it
+      if (!window.buttonLock.isLocked(continueBtn)) {
+        continueBtn.disabled = !hasPrompt || this.isGenerating
+      }
     }
   }
 

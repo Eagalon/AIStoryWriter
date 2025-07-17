@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
-from typing import List
+from typing import List, Any
+from datetime import datetime
 import time
 import json
 
@@ -27,6 +28,19 @@ from app.services.story_workflow_service import story_workflow_service
 from app.core.config import settings
 
 router = APIRouter()
+
+
+def json_serialize(obj: Any) -> str:
+    """Custom JSON serializer that handles datetime objects"""
+
+    def default_serializer(o):
+        if isinstance(o, datetime):
+            return o.isoformat()
+        raise TypeError(
+            f"Object of type {o.__class__.__name__} is not JSON serializable"
+        )
+
+    return json.dumps(obj, default=default_serializer)
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -176,7 +190,12 @@ async def get_prompt_suggestions():
 async def create_story_workflow(request: CreateWorkflowRequest):
     """Create a new multi-step story generation workflow"""
     try:
-        workflow = story_workflow_service.create_workflow(request)
+        workflow = story_workflow_service.create_workflow(
+            prompt=request.prompt,
+            model=request.model,
+            temperature=request.temperature,
+            top_p=request.top_p,
+        )
         return WorkflowResponse(
             workflow=workflow,
             message="Workflow created successfully. Ready to generate characters and settings.",
@@ -253,6 +272,39 @@ async def generate_outline(workflow_id: str, request: GenerateOutlineRequest):
         )
 
 
+@router.post("/workflow/{workflow_id}/chapter/{chapter_number}/stream")
+async def generate_chapter_stream(
+    workflow_id: str, chapter_number: int, request: GenerateChapterRequest
+):
+    """Generate a specific chapter with streaming response and timing information"""
+    try:
+
+        async def stream_generator():
+            async for update in story_workflow_service.generate_chapter_stream(
+                workflow_id=workflow_id,
+                chapter_number=chapter_number,
+                additional_instructions=request.additional_instructions,
+            ):
+                # Send each update as JSON
+                yield f"data: {json_serialize(update)}\n\n"
+
+        return StreamingResponse(
+            stream_generator(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/plain; charset=utf-8",
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate chapter: {str(e)}"
+        )
+
+
 @router.post(
     "/workflow/{workflow_id}/chapter/{chapter_number}", response_model=WorkflowResponse
 )
@@ -295,7 +347,7 @@ async def generate_all_chapters(workflow_id: str, request: GenerateAllChaptersRe
                 validation_threshold=request.validation_threshold,
             ):
                 # Send each update as JSON
-                yield f"data: {json.dumps(update)}\n\n"
+                yield f"data: {json_serialize(update)}\n\n"
 
         return StreamingResponse(
             stream_generator(),
@@ -350,5 +402,5 @@ async def delete_workflow(workflow_id: str):
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    del story_workflow_service.workflows[workflow_id]
+    story_workflow_service.delete_workflow(workflow_id)
     return {"message": "Workflow deleted successfully"}

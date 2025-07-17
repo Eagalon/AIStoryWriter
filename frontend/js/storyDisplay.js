@@ -140,7 +140,7 @@ class StoryDisplay {
     return `
             <div class="story-content" id="storyContentArea">
                 <div class="story-text">
-                    ${this.escapeHtml(this.content)}${
+                    ${this.parseContentWithThinking(this.content)}${
       this.isGenerating ? '<span class="story-cursor"></span>' : ''
     }
                 </div>
@@ -176,20 +176,36 @@ class StoryDisplay {
       })
     }
 
-    // Copy button
+    // Copy button with locking
     const copyBtn = document.getElementById('copyBtn')
     if (copyBtn) {
-      copyBtn.addEventListener('click', () => {
-        this.copyToClipboard()
-      })
+      const wrappedCopy = window.buttonLock.wrapAsync(
+        copyBtn,
+        this.copyToClipboard.bind(this),
+        {
+          lockText: 'Copied!',
+          lockIcon: 'check',
+          minDuration: 1500,
+          showSpinner: false,
+        }
+      )
+      copyBtn.addEventListener('click', wrappedCopy)
     }
 
-    // Download button
+    // Download button with locking
     const downloadBtn = document.getElementById('downloadBtn')
     if (downloadBtn) {
-      downloadBtn.addEventListener('click', () => {
-        this.downloadAsText()
-      })
+      const wrappedDownload = window.buttonLock.wrapAsync(
+        downloadBtn,
+        this.downloadAsText.bind(this),
+        {
+          lockText: 'Downloaded!',
+          lockIcon: 'check',
+          minDuration: 1500,
+          showSpinner: false,
+        }
+      )
+      downloadBtn.addEventListener('click', wrappedDownload)
     }
 
     // Continue story button
@@ -220,12 +236,18 @@ class StoryDisplay {
     const contentArea = document.querySelector('.story-text')
     if (contentArea) {
       contentArea.innerHTML =
-        this.escapeHtml(this.content) + '<span class="story-cursor"></span>'
+        this.parseContentWithThinking(this.content) +
+        '<span class="story-cursor"></span>'
 
       // Auto-scroll to bottom
       const storyContent = document.getElementById('storyContentArea')
       if (storyContent) {
         storyContent.scrollTop = storyContent.scrollHeight
+      }
+
+      // Re-initialize Lucide icons for new thinking blocks
+      if (window.lucide) {
+        window.lucide.createIcons()
       }
     }
 
@@ -327,6 +349,51 @@ class StoryDisplay {
     const div = document.createElement('div')
     div.textContent = text
     return div.innerHTML
+  }
+
+  parseContentWithThinking(text) {
+    // Parse content and handle thinking tags specially
+    if (!text) return ''
+
+    // Split content by thinking tags (both <thinking> and <think>)
+    const parts = text.split(
+      /(<(?:thinking|think)>[\s\S]*?<\/(?:thinking|think)>)/gi
+    )
+    let result = ''
+    let thinkingCounter = 0
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
+
+      if (part.match(/^<(?:thinking|think)>[\s\S]*?<\/(?:thinking|think)>$/i)) {
+        // This is a thinking block
+        thinkingCounter++
+        const thinkingContent = part
+          .replace(/^<(?:thinking|think)>([\s\S]*?)<\/(?:thinking|think)>$/i, '$1')
+          .trim()
+        const thinkingId = `thinking-${Date.now()}-${thinkingCounter}`
+
+        result += `
+          <div class="thinking-block">
+            <div class="thinking-header" onclick="this.parentElement.classList.toggle('expanded')">
+              <i data-lucide="brain"></i>
+              <span>Internal Reasoning</span>
+              <i data-lucide="chevron-down" class="thinking-chevron"></i>
+            </div>
+            <div class="thinking-content">
+              <div class="thinking-text">${this.escapeHtml(
+                thinkingContent
+              )}</div>
+            </div>
+          </div>
+        `
+      } else if (part.trim()) {
+        // This is regular content
+        result += `<div class="story-paragraph">${this.escapeHtml(part)}</div>`
+      }
+    }
+
+    return result
   }
 }
 
