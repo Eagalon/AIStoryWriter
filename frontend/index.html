@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Story Writer</title>
+    <link rel="stylesheet" href="css/main.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  </head>
+  <body>
+    <!-- Header -->
+    <header class="header">
+      <div class="container">
+        <div class="header-content">
+          <div class="header-left">
+            <div class="logo">
+              <i data-lucide="pen"></i>
+            </div>
+            <div class="header-text">
+              <h1>AI Story Writer</h1>
+              <p>Multi-step story generation with Ollama</p>
+            </div>
+          </div>
+
+          <div class="header-actions">
+            <button id="settingsBtn" class="btn btn-outline" title="Settings">
+              <i data-lucide="settings"></i>
+            </button>
+
+            <button
+              id="newStoryBtn"
+              class="btn btn-outline"
+              title="Start New Story"
+            >
+              <i data-lucide="plus"></i>
+              New Story
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Step Progress Indicator -->
+    <div class="step-progress-container">
+      <div class="container">
+        <div id="stepProgressIndicator" class="step-progress-indicator">
+          <!-- Progress steps will be rendered here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div class="container">
+        <div class="main-layout">
+          <!-- Center Panel - All Workflow Steps -->
+          <div class="center-panel">
+            <!-- Story Prompt Block -->
+            <div class="workflow-block" id="promptBlock">
+              <div class="block-header">
+                <div class="block-title">
+                  <i data-lucide="edit-3"></i>
+                  <h3>Story Prompt</h3>
+                </div>
+                <div class="block-status" id="promptStatus">
+                  <span class="status-badge pending"
+                    >Enter your story idea</span
+                  >
+                </div>
+              </div>
+              <div class="block-content">
+                <div class="prompt-section">
+                  <textarea
+                    id="promptTextarea"
+                    placeholder="Describe the story you want to create..."
+                    class="textarea"
+                    rows="4"
+                  ></textarea>
+
+                  <button
+                    id="suggestionsBtn"
+                    class="suggestions-btn"
+                    title="Get writing prompts"
+                  >
+                    <i data-lucide="lightbulb"></i>
+                  </button>
+
+                  <div
+                    id="suggestionsPanel"
+                    class="suggestions-panel"
+                    style="display: none"
+                  >
+                    <h4>Writing Prompts</h4>
+                    <div id="suggestionsList" class="suggestions-list"></div>
+                  </div>
+
+                  <div class="block-actions">
+                    <button id="startWorkflowBtn" class="btn btn-primary">
+                      <i data-lucide="play"></i>
+                      Start Story Creation
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Characters & Settings Block -->
+            <div class="workflow-block disabled" id="charactersBlock">
+              <div class="block-header">
+                <div class="block-title">
+                  <i data-lucide="users"></i>
+                  <h3>Characters & Settings</h3>
+                </div>
+                <div class="block-status" id="charactersStatus">
+                  <span class="status-badge pending"
+                    >Complete prompt first</span
+                  >
+                </div>
+              </div>
+              <div class="block-content" id="charactersContent">
+                <div class="placeholder-content">
+                  <i data-lucide="users"></i>
+                  <p>
+                    Characters and story settings will be generated and editable
+                    here
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Story Outline Block -->
+            <div class="workflow-block disabled" id="outlineBlock">
+              <div class="block-header">
+                <div class="block-title">
+                  <i data-lucide="list"></i>
+                  <h3>Story Outline</h3>
+                </div>
+                <div class="block-status" id="outlineStatus">
+                  <span class="status-badge pending"
+                    >Complete characters first</span
+                  >
+                </div>
+              </div>
+              <div class="block-content" id="outlineContent">
+                <div class="placeholder-content">
+                  <i data-lucide="list"></i>
+                  <p>Story outline with chapter breakdowns will appear here</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Chapter Generation Block -->
+            <div class="workflow-block disabled" id="chaptersBlock">
+              <div class="block-header">
+                <div class="block-title">
+                  <i data-lucide="book-open"></i>
+                  <h3>Chapter Generation</h3>
+                </div>
+                <div class="block-status" id="chaptersStatus">
+                  <span class="status-badge pending"
+                    >Complete outline first</span
+                  >
+                </div>
+              </div>
+              <div class="block-content" id="chaptersContent">
+                <div class="placeholder-content">
+                  <i data-lucide="book-open"></i>
+                  <p>
+                    Individual chapters will be generated and validated here
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Complete Story Block -->
+            <div class="workflow-block disabled" id="completeBlock">
+              <div class="block-header">
+                <div class="block-title">
+                  <i data-lucide="check-circle"></i>
+                  <h3>Complete Story</h3>
+                </div>
+                <div class="block-status" id="completeStatus">
+                  <span class="status-badge pending"
+                    >Complete chapters first</span
+                  >
+                </div>
+              </div>
+              <div class="block-content" id="completeContent">
+                <div class="placeholder-content">
+                  <i data-lucide="check-circle"></i>
+                  <p>Your completed story will be displayed here</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings Sidebar -->
+          <div id="settingsSidebar" class="side-panel collapsed">
+            <div class="panel-header" id="settingsHeader">
+              <div class="panel-title">
+                <i data-lucide="settings"></i>
+                <h2>Settings</h2>
+              </div>
+              <button class="collapse-btn" id="settingsCollapseBtn">
+                <i data-lucide="chevron-left"></i>
+              </button>
+            </div>
+            <div class="panel-content" id="settingsContent">
+              <!-- Settings content will be loaded here -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Status Bar -->
+    <div id="statusBar" class="status-bar">
+      <div class="status-bar-content">
+        <div class="status-bar-spinner"></div>
+        <div id="statusBarText" class="status-bar-text">Processing...</div>
+      </div>
+      <div class="status-bar-actions">
+        <button
+          id="statusBarClose"
+          class="status-bar-close"
+          title="Hide status"
+        >
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/settingsPanel.js"></script>
+    <script src="js/statusBar.js"></script>
+    <script src="js/storyWorkflow.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>

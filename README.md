@@ -1,130 +1,265 @@
-# AI Story Generator 📚✨
+# AI Story Writer
 
-Generate full-length novels with AI! Harness the power of large language models to create engaging stories based on your prompts.
+A simple web UI framework for generating long context stories with Ollama. Features a clean, modern interface with real-time streaming generation, customizable settings, and story continuation capabilities.
 
-[![Discord](https://img.shields.io/discord/1255847829763784754?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://discord.gg/R2SySWDr2s)
+## Features
 
-## 🚀 Features
+- **Real-time Streaming**: Watch stories generate word by word in real-time
+- **Dynamic Settings**: Adjust temperature, top-p, and system prompts on the fly
+- **Story Continuation**: Continue existing stories with new prompts
+- **Model Selection**: Choose from any available Ollama models
+- **Export Options**: Copy to clipboard or download as text files
+- **Statistics**: Track word count, character count, and reading time
+- **Writing Prompts**: Built-in collection of creative writing prompts
+- **Responsive Design**: Works on desktop and mobile devices
+- **Dark Mode**: Automatic dark/light theme support
 
-- Generate medium to full-length novels: Produce substantial stories with coherent narratives, suitable for novella or novel-length works.
-- Easy setup and use: Get started quickly with minimal configuration required.
-- Customizable prompts and models: Choose from existing prompts or create your own, and select from various language models.
-- Automatic model downloading: The system can automatically download required models via Ollama if they aren't already available.
-- Support for local models via Ollama: Run language models locally for full control and privacy.
-- Cloud provider support (currently Google): Access high-performance computing resources for those without powerful GPUs.
-- Flexible configuration options: Fine-tune the generation process through easily modifiable settings.
-- Works across all operating systems
-- Supoorts translation of the generated stories in all languages
+## Architecture
 
-## 🏁 Quick Start
-
-Getting started with AI Story Generator is easy:
-
-1. Clone the repository
-2. Install [Ollama](https://ollama.com/) for local model support
-3. Run the generator:
-
-```sh
-./Write.py -Prompt Prompts/YourChosenPrompt.txt
+```
+├── backend/                 # FastAPI Python backend
+│   ├── app/
+│   │   ├── api/            # API routes
+│   │   ├── core/           # Configuration
+│   │   ├── models/         # Pydantic models
+│   │   └── services/       # Ollama integration
+│   └── main.py             # Application entry point
+└── frontend/               # Simple HTML/CSS/JS frontend
+    ├── css/
+    │   └── main.css        # Styling
+    ├── js/
+    │   ├── api.js          # API communication
+    │   ├── settingsPanel.js # Settings management
+    │   ├── storyGenerator.js # Story generation
+    │   ├── storyDisplay.js  # Story display
+    │   └── main.js         # App initialization
+    └── index.html          # Main HTML file
 ```
 
-That's it! The system will automatically download any required models and start generating your story.
+## Prerequisites
 
-**Optional steps:**
+1. **Python 3.10+** with `uv` package manager
+2. **Ollama** running locally with at least one model
 
-- Modify prompts in `Writer/Prompts.py` or create your own
-- Configure the model selection in `Writer/Config.py`
+### Setting up Ollama
 
-## 💻 Hardware Recommendations
+1. Install Ollama from [ollama.ai](https://ollama.ai)
+2. Pull a model (e.g., `ollama pull llama3.1:8b`)
+3. Ensure Ollama is running on `http://localhost:11434`
 
-Not sure which models to use with your GPU? Check out our [Model Recommendations](Docs/Models.md) page for suggestions based on different GPU capabilities. We provide a quick reference table to help you choose the right models for your hardware, ensuring optimal performance and quality for your story generation projects.
+## Quick Start
 
-## 🛠️ Usage
+### 1. Clone and Setup Backend
 
-You can customize the models used for different parts of the story generation process in two ways:
+```bash
+# Install Python dependencies
+cd backend
+uv pip install -r requirements.txt
+# Alternative: uv pip install fastapi uvicorn[standard] httpx pydantic python-multipart jinja2 aiofiles python-dotenv pydantic-settings
 
-### 1. Using Command-Line Arguments (Recommended)
-
-You can override the default models by specifying them as command-line arguments:
-
-```sh
-./Write.py -Prompt Prompts/YourChosenPrompt.txt -InitialOutlineModel "ollama://llama3:70b" ...
+# Start the backend server
+uv run python main.py
 ```
 
-Available command-line arguments are stated in the `Write.py` file.
+The backend will be available at `http://localhost:8000`
 
-The model format is: `{ModelProvider}://{ModelName}@{ModelHost}?parameter=value`
+### 2. Start the Application
 
-- Default host is `127.0.0.1:11434` (currently only affects ollama)
-- Default ModelProvider is `ollama`
-- Supported providers: `ollama`, `google`, `openrouter`
-- For `ollama` we support the passing of parameters (e.g. `temperature`) on a per model basis
-
-Example:
-```sh
-./Write.py -Prompt Prompts/YourChosenPrompt.txt -InitialOutlineModel "google://gemini-1.5-pro" -ChapterOutlineModel "ollama://llama3:70b@192.168.1.100:11434" ...
+```bash
+# Quick start (runs both backend and frontend)
+python run.py
 ```
 
-This flexibility allows you to experiment with different models for various parts of the story generation process, helping you find the optimal combination for your needs.
+Both servers will start automatically:
 
+- Backend API: `http://localhost:8000`
+- Frontend: `http://localhost:5173`
 
-NOTE: If you're using a provider that needs an API key, please copy `.env.example` to `.env` and paste in your API keys there.
+### 3. Access the Application
 
+Open your browser to `http://localhost:5173` and start generating stories!
 
-### 2. Using Writer/Config.py
+## Configuration
 
+### Backend Configuration
 
-Edit the `Writer/Config.py` file to change the default models:
+Create a `.env` file in the project root:
 
-```python
-INITIAL_OUTLINE_WRITER_MODEL = "ollama://llama3:70b"
-CHAPTER_OUTLINE_WRITER_MODEL = "ollama://gemma2:27b"
-CHAPTER_WRITER_MODEL = "google://gemini-1.5-flash"
-...
+```env
+# Ollama Configuration
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_DEFAULT_MODEL=llama3.1:8b
+OLLAMA_TIMEOUT=300
+
+# Story Generation Settings
+MAX_STORY_LENGTH=50000
+DEFAULT_TEMPERATURE=0.7
+DEFAULT_TOP_P=0.9
+
+# Application Settings
+DEBUG=false
+SERVE_STATIC=true
+ALLOWED_ORIGINS=["http://localhost:3000", "http://localhost:5173"]
 ```
 
-## 🧰 Architecture Overview
+### Frontend Configuration
 
-![Block Diagram](Docs/BlockDiagram.drawio.svg)
+The frontend automatically connects to the backend API. No additional configuration needed for development.
 
-## 🛠️ Customization
+## Usage
 
-- Experiment with different local models via Ollama: Try out various language models to find the best fit for your storytelling needs.
-- Test various model combinations for different story components: Mix and match models for outline generation, chapter writing, and revisions to optimize output quality.
+1. **Enter a Prompt**: Describe the story you want to create
+2. **Adjust Settings**: Optionally modify model, temperature, and other parameters
+3. **Generate**: Click "Generate Story" to start streaming generation
+4. **Continue**: Add to existing stories with the continue feature
+5. **Export**: Copy or download your completed stories
 
-## 💪 What's Working Well
+### Writing Tips
 
-- Generating decent-length stories: The system consistently produces narratives of substantial length, suitable for novella or novel-length works.
-- Character consistency: AI models maintain coherent character traits and development throughout the generated stories.
-- Interesting story outlines: The initial outline generation creates compelling story structures that serve as strong foundations for the full narratives.
+- Use specific, detailed prompts for better results
+- Experiment with different temperature settings:
+  - Low (0.1-0.4): More focused and coherent
+  - Medium (0.5-0.8): Balanced creativity and coherence
+  - High (0.9-1.5): More creative and unpredictable
+- Use system prompts to set style or genre preferences
+- Try the preset configurations for quick setup
 
-## 🔧 Areas for Improvement
+## API Endpoints
 
-- Reducing repetitive phrases: We're working on enhancing the language variety to create more natural-sounding prose.
-- Improving chapter flow and connections: Efforts are ongoing to create smoother transitions between chapters and maintain narrative cohesion.
-- Addressing pacing issues: Refinements are being made to ensure proper story pacing and focus on crucial plot points.
-- Optimizing generation speed: We're continuously working on improving performance to reduce generation times without sacrificing quality.
+### Health Check
 
-## 🤝 Contributing
+```
+GET /api/v1/health
+```
 
-We're excited to hear from you! Your feedback and contributions are crucial to improving the AI Story Generator. Here's how you can get involved:
+### Get Available Models
 
-1. 🐛 **Open Issues**: Encountered a bug or have a feature request? [Open an issue](https://github.com/datacrystals/AIStoryWriter/issues) and let us know!
+```
+GET /api/v1/models
+```
 
-2. 💡 **Start Discussions**: Have ideas or want to brainstorm? [Start a discussion](https://github.com/datacrystals/AIStoryWriter/discussions) in our GitHub Discussions forum.
+### Generate Story (Streaming)
 
-3. 🔬 **Experiment and Share**: Try different model combinations and share your results. Your experiments can help improve the system for everyone!
+```
+POST /api/v1/generate/stream
+Content-Type: application/json
 
-4. 🖊️ **Submit Pull Requests**: Ready to contribute code? We welcome pull requests for improvements and new features.
+{
+  "prompt": "Write a story about...",
+  "model": "llama3.1:8b",
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "system_prompt": "Write in a fantasy style",
+  "continue_story": "Previous story content..."
+}
+```
 
-5. 💬 **Join our Discord**: For real-time chat, support, and community engagement, [join our Discord server](https://discord.gg/R2SySWDr2s).
+### Generate Story (Complete)
 
-Don't hesitate to reach out – your input is valuable, and we're here to help!
+```
+POST /api/v1/generate
+Content-Type: application/json
 
-## 📄 License
+{
+  "prompt": "Write a story about...",
+  "model": "llama3.1:8b",
+  "temperature": 0.7,
+  "top_p": 0.9
+}
+```
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). This means that if you modify the code and use it to provide a service over a network, you must make your modified source code available to the users of that service. For more details, see the [LICENSE](LICENSE) file in the repository or visit [https://www.gnu.org/licenses/agpl-3.0.en.html](https://www.gnu.org/licenses/agpl-3.0.en.html).
+### Get Writing Prompts
 
----
+```
+GET /api/v1/prompts/suggestions
+```
 
-Join us in shaping the future of AI-assisted storytelling! 🖋️🤖
+## Development
+
+### Backend Development
+
+```bash
+cd backend
+uv run python main.py
+```
+
+The backend runs with hot reload enabled for development.
+
+### Frontend Development
+
+The frontend uses simple HTML/CSS/JS with no build step required. Just edit the files and refresh:
+
+```bash
+# Serve frontend manually (optional)
+cd frontend
+python -m http.server 5173
+```
+
+The frontend includes:
+
+- Modern CSS with custom properties
+- Modular JavaScript architecture
+- Lucide icons via CDN
+- Responsive design
+
+## Production Deployment
+
+### Backend
+
+```bash
+cd backend
+uv pip install -r requirements.txt
+uv run uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+### Frontend
+
+The frontend is already production-ready as static files. No build step required:
+
+```bash
+# Frontend files are ready to serve directly from frontend/
+# The backend can serve them when SERVE_STATIC=true
+```
+
+The static files can be served by any web server or the backend directly.
+
+## Troubleshooting
+
+### Ollama Connection Issues
+
+1. Ensure Ollama is running: `ollama list`
+2. Check the Ollama API: `curl http://localhost:11434/api/tags`
+3. Verify model availability: `ollama pull llama3.1:8b`
+
+### Backend Issues
+
+1. Check Python version: `python --version` (should be 3.10+)
+2. Verify dependencies: `uv pip list`
+3. If you get package build errors, try: `cd backend && uv pip install -r requirements.txt`
+4. Check logs for error messages
+
+### Frontend Issues
+
+1. Check browser console for JavaScript errors
+2. Verify API connection in browser dev tools (Network tab)
+3. Ensure backend is running and accessible
+
+## License
+
+MIT License - feel free to use and modify as needed.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## Support
+
+For issues and questions:
+
+1. Check the troubleshooting section
+2. Review the Ollama documentation
+3. Open an issue on GitHub
