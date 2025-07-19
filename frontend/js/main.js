@@ -57,6 +57,7 @@ class App {
 
     // Initialize settings panel
     window.settingsPanel = new SettingsPanel()
+    await window.settingsPanel.init()
 
     // Initialize story display
     window.storyDisplay = new StoryDisplay()
@@ -73,11 +74,9 @@ class App {
     // Bind all events
     window.storyGenerator.bindEvents()
     window.storyWorkflow.bindEvents()
-    window.settingsPanel.bindEvents()
 
     // Initial render
     window.storyDisplay.render()
-    window.settingsPanel.render()
     window.storyWorkflow.init()
   }
 
