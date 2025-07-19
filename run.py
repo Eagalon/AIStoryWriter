@@ -24,8 +24,6 @@ def run_backend():
         return subprocess.Popen(
             ["uv", "run", "python", "main.py"],
             cwd=backend_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
         )
     except FileNotFoundError:
         print("❌ Error: 'uv' not found. Please install uv package manager.")
@@ -42,8 +40,6 @@ def run_frontend():
         return subprocess.Popen(
             ["python", "-m", "http.server", "5173"],
             cwd=frontend_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
         )
     except Exception as e:
         print(f"❌ Error: Failed to start frontend server: {e}")
